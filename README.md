@@ -3,7 +3,6 @@
 ## 1. Team Information
 
 - Team Member 1: Devansh Gupta - PES1UG24CS145
-- Team Member 2: Goatex
 
 ## 2. Build, Load, and Run Instructions
 
