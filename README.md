@@ -26,8 +26,13 @@ If your system uses a different CachyOS kernel flavor, install the matching head
 From the repository root:
 
 ```bash
-make -C boilerplate ci
-make -C boilerplate
+make
+```
+
+CI-safe smoke check:
+
+```bash
+make ci
 ```
 
 Optional preflight:
@@ -124,6 +129,7 @@ Screenshot 3:
 ```bash
 cp -a rootfs-base rootfs-log
 sudo ./boilerplate/engine start logger ./rootfs-log "/io_pulse 120 200" --soft-mib 48 --hard-mib 128 --nice 0
+ps -T -C engine -o pid,tid,comm,stat,time,args
 sudo ./boilerplate/engine ps
 sudo ./boilerplate/engine logs logger
 sudo tail -n 20 logs/logger.log
@@ -209,10 +215,11 @@ Caption: `engine ps` shows container ID, PID, state, limits, exit status, reason
 
 ### Screenshot 3 - Bounded-Buffer Logging
 
-Caption: `engine logs logger` and `logs/logger.log` both show container output captured through the supervisor logging pipeline.
+Caption: `engine logs logger` and `logs/logger.log` show the captured output, while the supervisor thread listing and code references show the dedicated producer and consumer sides of the bounded-buffer pipeline.
 
 ![Screenshot 3A: engine logs output](docs/screenshots/screenshot3_logs_engine.png)
 ![Screenshot 3B: persistent log file](docs/screenshots/screenshot3_logs_file.png)
+![Screenshot 3C: pipeline thread evidence](docs/screenshots/screenshot3_pipeline_threads.png)
 
 ### Screenshot 4 - CLI and IPC
 
@@ -261,6 +268,8 @@ The long-running supervisor centralizes metadata, logging, and signal handling f
 ### IPC, Threads, and Synchronization
 
 The runtime uses two IPC paths. The control path is a UNIX domain socket between the CLI client and the supervisor. The logging path is a pipe from each container's `stdout` and `stderr` into the supervisor. Each container has a producer thread that reads from its pipe and pushes fixed-size entries into a bounded circular buffer. A consumer thread removes entries and appends them to `logs/<id>.log`. The log buffer uses one mutex and two condition variables to avoid overflow, underflow, corruption, and deadlock, while container metadata is protected by a separate mutex to avoid races between CLI operations, logger threads, and child reaping.
+
+In kernel space, the monitored PID list uses a spinlock instead of a mutex because the same shared list is touched both from the `ioctl` path and from the timer callback. The timer callback must not sleep, so a mutex would be the wrong primitive there. The spinlock keeps list insertion, removal, and iteration atomic across those two code paths, which prevents races such as unregistering a PID while the timer is scanning it or freeing a node while another path is still traversing the list.
 
 ### Memory Management and Enforcement
 
